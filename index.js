@@ -87,19 +87,21 @@ function sanitizeCommand(raw) {
 }
 
 /**
- * Build the `args` array passed to cursor-agent on every invocation.
+ * Build the args array passed to cursor-agent on every invocation. All security
+ * knobs are configurable via plugin config — see the README for safety profiles.
  *
- * Security knobs (all configurable via plugin config — see README):
- *   - `mode: "agent"|"plan"|"ask"`  (default "agent")
- *       "plan" / "ask" route through cursor-agent's read-only execution modes.
- *   - `allowTools: boolean`         (default true)
- *       When false, omit `--force --trust` so cursor-agent will refuse to run
- *       its built-in write/shell tools without explicit approval.
- *   - `sandbox: "enabled"|"disabled"`  (optional, no flag if unset)
- *       Forwarded as `--sandbox <value>`.
+ *   - mode: "agent" | "plan" | "ask"
+ *       "plan" and "ask" route cursor-agent through its read-only execution
+ *       modes. The legacy headless behavior is used otherwise.
+ *   - allowTools: boolean
+ *       When false, the non-interactive-trust flags are omitted, so cursor-agent
+ *       requires explicit approval before each tool action.
+ *   - sandbox: "enabled" | "disabled"
+ *       Forwarded as cursor-agent's --sandbox flag when set.
  *
- * Defaults preserve backward compatibility (full agent mode with --force --trust);
- * users can opt in to safer profiles without code changes.
+ * The defaults preserve OpenClaw's standard cli-backend headless profile (matches
+ * the built-in claude-cli backend); switch to the safer profiles for untrusted
+ * workspaces.
  */
 function buildCursorArgs(pluginConfig) {
   const args = ["-p", "--output-format", "stream-json", "--stream-partial-output"];
@@ -185,8 +187,37 @@ async function runRefreshInProcess(pluginConfig, { dryRun = false } = {}) {
   }
 }
 
+/**
+ * Returns null when the cache is fine, otherwise a user-facing string
+ * describing why the user should run `/cursor-models refresh`. Used by both
+ * the runtime audit collector (`collectCursorCliFindings`) and the slash-
+ * command status output so users see the same diagnosis no matter how they
+ * arrived at it.
+ */
+function describeStaleCacheReason(rules) {
+  if (rules.source.startsWith("fallback")) {
+    return "model-rules.json is missing — using minimal fallback rules. Thinking-level rewrites will be incorrect.";
+  }
+  if (!rules.generatedAt) {
+    return "model-rules.json predates 0.0.5 (no generatedAt). Context windows may be stale.";
+  }
+  const generatedAtMs = Date.parse(rules.generatedAt);
+  if (!Number.isNaN(generatedAtMs)) {
+    const ageDays = (Date.now() - generatedAtMs) / 86_400_000;
+    if (ageDays > 30) return `model-rules.json is ${Math.floor(ageDays)} days old.`;
+  }
+  return null;
+}
+
 function formatCacheStatus(rules) {
   const lines = [];
+  const staleReason = describeStaleCacheReason(rules);
+  if (staleReason) {
+    lines.push("⚠ Cache may be out of date:");
+    lines.push(`  ${staleReason}`);
+    lines.push("  Run `bash ~/.openclaw/extensions/cursor-cli/scripts/refresh-models.sh` to refresh.");
+    lines.push("");
+  }
   lines.push(`Source: ${rules.source}`);
   if (rules.generatedAt) lines.push(`Last refresh: ${rules.generatedAt}`);
   const famCount = Object.keys(rules.families ?? {}).length;
@@ -223,11 +254,45 @@ function formatFamilyList(rules) {
   return lines.join("\n");
 }
 
+/**
+ * Plugin-side health collector wired into `openclaw security audit --deep`.
+ *
+ * NOTE: OpenClaw 2026.5.x runs audit in validate-only mode, which skips the
+ * full-activation collector wiring; this collector is therefore best-effort.
+ * The primary stale-cache surface is `/cursor-models status`, which formats
+ * the same reason via `describeStaleCacheReason()`. We still register the
+ * collector so future OpenClaw versions that invoke plugin collectors during
+ * audit will automatically see the warning without code changes here.
+ */
+function collectCursorCliFindings() {
+  const rules = loadRules();
+  const reason = describeStaleCacheReason(rules);
+  if (!reason) return [];
+  const checkId = rules.source.startsWith("fallback")
+    ? "cursor-cli.cache.missing"
+    : (!rules.generatedAt ? "cursor-cli.cache.legacy" : "cursor-cli.cache.stale");
+  const severity = checkId === "cursor-cli.cache.stale" ? "info" : "warn";
+  return [{
+    checkId,
+    severity,
+    title: "cursor-cli model cache needs refresh",
+    detail: reason,
+    remediation: "Run `bash ~/.openclaw/extensions/cursor-cli/scripts/refresh-models.sh` or `/cursor-models refresh`.",
+  }];
+}
+
 export default definePluginEntry({
   id: BACKEND_ID,
   name: "Cursor CLI",
   description:
     "OpenClaw CLI backend that routes model calls through the local cursor-agent binary (Cursor subscription).",
+  // Top-level so that `openclaw security audit --deep` can read the collector
+  // from the plugin metadata registry without invoking the full runtime
+  // register() — the audit CLI runs in its own process and only loads
+  // lightweight definition fields. The upgrade-time allowlist auto-merge
+  // lives in the separate setup-api.mjs file (declared by configContracts
+  // in openclaw.plugin.json).
+  securityAuditCollectors: [collectCursorCliFindings],
   register(api) {
     const pluginConfig = api?.pluginConfig ?? {};
 

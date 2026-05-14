@@ -1,6 +1,6 @@
 {
   "name": "@jeehou/openclaw-cursor-cli",
-  "version": "0.0.3",
+  "version": "0.0.6",
   "description": "OpenClaw plugin: route model calls through the local `cursor-agent` binary (Cursor subscription). Adds a `cursor-cli` provider and CLI backend with live model-catalog refresh and unified `--thinking` mapping.",
   "type": "module",
   "main": "./index.js",
@@ -26,6 +26,7 @@
   ],
   "files": [
     "index.js",
+    "setup-api.mjs",
     "openclaw.plugin.json",
     "src/",
     "scripts/",

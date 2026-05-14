@@ -11,6 +11,9 @@
     "modelPrefixes": ["cursor-cli/"]
   },
   "cliBackends": ["cursor-cli"],
+  "configContracts": {
+    "compatibilityMigrationPaths": ["models.providers.cursor-cli"]
+  },
   "commandAliases": [
     {
       "name": "cursor-models",
@@ -44,18 +47,16 @@
       "mode": {
         "type": "string",
         "enum": ["agent", "plan", "ask"],
-        "default": "agent",
-        "description": "Execution mode passed to cursor-agent. 'agent' = full agent (default); 'plan' = read-only/planning, no file edits; 'ask' = pure Q&A, read-only."
+        "description": "Execution mode for cursor-agent. Pick the lowest privilege you need. 'plan' = read-only/planning (recommended when you only want a model provider, no file edits). 'ask' = pure Q&A, no tool use. 'agent' = full coding agent capable of writes/shell. Omit to inherit the legacy headless behavior."
       },
       "allowTools": {
         "type": "boolean",
-        "default": true,
-        "description": "If true (default), pass --force --trust so cursor-agent may run its built-in write/shell tools without prompting. Set to false to make tool actions require explicit approval — this disables non-interactive headless runs but is much safer for untrusted workspaces."
+        "description": "Controls whether cursor-agent may run its write/shell tools non-interactively. Set false (recommended for untrusted workspaces, and the right choice when using this plugin purely as a text-model provider) to make every tool action require explicit approval. Pairs naturally with mode:\"plan\" or mode:\"ask\"."
       },
       "sandbox": {
         "type": "string",
         "enum": ["enabled", "disabled"],
-        "description": "Override cursor-agent's sandbox setting. 'enabled' restricts tool actions to a sandbox; 'disabled' opts out. Leave unset to use cursor-agent's own config default."
+        "description": "Forwarded to cursor-agent's --sandbox flag. 'enabled' confines tool actions to a sandbox (recommended for untrusted workspaces). 'disabled' opts out. Omit to inherit cursor-agent's own config."
       },
       "extraArgs": {
         "type": "array",

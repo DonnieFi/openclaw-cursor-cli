@@ -20,9 +20,10 @@
 //     via the runtime's import hook;
 //   - as a standalone CLI script invoked by scripts/refresh-models.sh, where
 //     the wrapper sets OPENCLAW_RUN_COMMAND_URL to an absolute file:// URL.
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 let _runPluginCommandWithTimeout = null;
 async function loadRunCommand() {
@@ -334,17 +335,75 @@ function prettyFamilyName(base, displayHint) {
   return s || base;
 }
 
+/**
+ * Read the current `agents.defaults.models` allowlist via `openclaw config get`.
+ * Returns an empty object if the field is missing/unparseable — never throws,
+ * because losing the user's existing entries would be far worse than missing
+ * a refresh.
+ */
+async function readAgentDefaultsModels(openclaw) {
+  try {
+    const raw = await spawnCapture(openclaw, ["config", "get", "agents.defaults.models"], { timeoutMs: 30000 });
+    const trimmed = raw.trim();
+    if (!trimmed) return {};
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Merge `cursor-cli/<family>` entries into `agents.defaults.models` so the
+ * OpenClaw `/model` picker and agent allowlist see them after a refresh.
+ *
+ * Only ADDS missing entries. Never modifies entries the user (or another
+ * plugin) put there, and never removes anything — even if a Cursor family
+ * disappears from the upstream catalog, we leave the old entry alone so users
+ * who hand-tuned it don't lose work.
+ */
+async function mergeAgentAllowlist({ openclaw, families, dryRun, log }) {
+  const current = await readAgentDefaultsModels(openclaw);
+  const toAdd = [];
+  for (const fam of families) {
+    const key = `cursor-cli/${fam}`;
+    if (!(key in current)) toAdd.push(key);
+  }
+  if (toAdd.length === 0) {
+    log?.(`agents.defaults.models: all ${families.length} cursor-cli families already allowlisted`);
+    return;
+  }
+  if (dryRun) {
+    log?.(`[dry-run] would add ${toAdd.length} cursor-cli entries to agents.defaults.models`);
+    log?.(`           e.g. ${toAdd.slice(0, 3).join(", ")}${toAdd.length > 3 ? ", ..." : ""}`);
+    return;
+  }
+  const next = { ...current };
+  for (const k of toAdd) next[k] = {};
+  await spawnCapture(openclaw, [
+    "config",
+    "set",
+    "agents.defaults.models",
+    JSON.stringify(next),
+  ], { timeoutMs: 30000 });
+  log?.(`agents.defaults.models: +${toAdd.length} cursor-cli entries (${Object.keys(next).length} total in allowlist)`);
+}
+
 /** Apply payload to disk + user config. */
 export async function applyPayload({ payload, openclaw, dryRun, log }) {
   const rulesPath = getRulesCachePath();
+  const families = payload.providerConfig.models.map((m) => m.id);
+
   if (dryRun) {
     log?.(`[dry-run] would write ${rulesPath}`);
-    log?.(`[dry-run] would set models.providers.cursor-cli with ${payload.providerConfig.models.length} models`);
+    log?.(`[dry-run] would set models.providers.cursor-cli with ${families.length} models`);
+    await mergeAgentAllowlist({ openclaw, families, dryRun: true, log });
     return;
   }
   await mkdir(path.dirname(rulesPath), { recursive: true });
   await writeFile(rulesPath, JSON.stringify(payload.rules, null, 2) + "\n", "utf-8");
-  log?.(`wrote ${rulesPath} (${payload.providerConfig.models.length} families, ${payload.rules.knownIds.length} cursor ids)`);
+  log?.(`wrote ${rulesPath} (${families.length} families, ${payload.rules.knownIds.length} cursor ids)`);
 
   await spawnCapture(openclaw, [
     "config",
@@ -353,6 +412,8 @@ export async function applyPayload({ payload, openclaw, dryRun, log }) {
     JSON.stringify(payload.providerConfig),
   ], { timeoutMs: 30000 });
   log?.(`set models.providers.cursor-cli`);
+
+  await mergeAgentAllowlist({ openclaw, families, dryRun: false, log });
 }
 
 /** Top-level orchestration. */
@@ -370,19 +431,38 @@ export async function refreshCursorModels({ cursorAgent = "cursor-agent", opencl
   return payload;
 }
 
-// CLI entry. Wrapped in an async IIFE so this module stays parsable by
-// loaders that don't permit top-level await (some plugin runtimes wrap ESM
-// modules in a script-style evaluator).
-if (import.meta.url === `file://${process.argv[1]}`) {
-  (async () => {
-    const args = process.argv.slice(2);
-    const dryRun = args.includes("--dry-run");
-    try {
-      await refreshCursorModels({ dryRun });
-      process.exit(0);
-    } catch (err) {
-      console.error(`refresh-models failed: ${err?.message ?? err}`);
-      process.exit(1);
-    }
-  })();
+/**
+ * CLI entry. We compare *real* paths so symlinks like /home/foo →
+ * /data00/home/foo (common on TikTok dev hosts) don't false-negative this
+ * check. The original check `import.meta.url === \`file://${process.argv[1]}\``
+ * worked on plain layouts but Node resolves import.meta.url through symlinks
+ * while argv[1] stays as the symlinked path, so they never matched.
+ *
+ * Wrapped in an async IIFE so this module stays parsable by loaders that
+ * don't permit top-level await (some plugin runtimes wrap ESM modules in a
+ * script-style evaluator).
+ */
+async function isCliEntry() {
+  if (!process.argv[1]) return false;
+  try {
+    const modulePath = fileURLToPath(import.meta.url);
+    const realModulePath = await realpath(modulePath);
+    const realArgvPath = await realpath(process.argv[1]);
+    return realModulePath === realArgvPath;
+  } catch {
+    return false;
+  }
 }
+
+(async () => {
+  if (!(await isCliEntry())) return;
+  const args = process.argv.slice(2);
+  const dryRun = args.includes("--dry-run");
+  try {
+    await refreshCursorModels({ dryRun });
+    process.exit(0);
+  } catch (err) {
+    console.error(`refresh-models failed: ${err?.message ?? err}`);
+    process.exit(1);
+  }
+})();
