@@ -101,10 +101,18 @@ Whenever Cursor ships new model ids, run **one** of:
 bash ~/.openclaw/extensions/cursor-cli/scripts/refresh-models.sh
 ```
 
+The script auto-locates your `openclaw` npm package so the refresh helper can reuse OpenClaw's plugin-sdk subprocess helper (no `child_process` import on our side). If auto-detection fails — e.g. unusual nvm / yarn layout — override with:
+```bash
+OPENCLAW_PACKAGE_ROOT=/path/to/lib/node_modules/openclaw \
+  bash ~/.openclaw/extensions/cursor-cli/scripts/refresh-models.sh
+```
+
 **Chat slash command** (in channels that support plugin slash commands — telegram / discord / feishu / mattermost):
 ```
 /cursor-models refresh
 ```
+
+This runs the same logic in-process inside the plugin runtime — no shell wrapper, no env-var tricks.
 
 Both routes:
 1. Run `cursor-agent models` and parse all 100+ Cursor model ids.

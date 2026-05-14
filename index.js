@@ -2,7 +2,10 @@ import { definePluginEntry } from "openclaw/plugin-sdk/core";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
+// `/cursor-models refresh` invokes the refresh module directly in-process.
+// All subprocess invocation lives inside src/refresh-models.mjs and is delegated
+// to OpenClaw's plugin-sdk run-command helper — never node's raw subprocess API.
+import { refreshCursorModels } from "./src/refresh-models.mjs";
 
 const BACKEND_ID = "cursor-cli";
 const PROVIDER_ID = "cursor-cli";
@@ -72,8 +75,8 @@ function sanitizeCommand(raw) {
   const trimmed = raw.trim();
   if (!trimmed) return CURSOR_CLI_DEFAULT_COMMAND;
   // Reject shell metacharacters / control chars that could be exploited if the
-  // value somehow flows through a shell. spawn() itself does not invoke a shell
-  // here, but defense-in-depth: keep `command` to "path-like" inputs only.
+  // value somehow flows through a shell. Subprocess invocation here does not
+  // use a shell anyway, but defense-in-depth: keep `command` path-like only.
   // Note: backslash is allowed so Windows paths (C:\foo\bar.exe) work.
   if (/[;&|`$<>\n\r\t"']/.test(trimmed)) return CURSOR_CLI_DEFAULT_COMMAND;
   // Allow: absolute POSIX path, Windows drive path, or a simple basename
@@ -162,31 +165,24 @@ function buildCliBackend(pluginConfig) {
 }
 
 /**
- * Run `bash scripts/refresh-models.sh` from the plugin's source directory and
- * stream its output back as text. Returns the final summary block.
+ * Drive the refresh flow in-process: calls `refreshCursorModels(...)` from
+ * src/refresh-models.mjs (which delegates subprocess work to OpenClaw's
+ * plugin-sdk run-command helper). Captures log lines into a buffer so the
+ * slash-command handler can surface a tail of them.
+ *
+ * Reads optional cursor-agent / openclaw binary overrides from plugin config.
  */
-function runRefreshScript({ scriptPath, dryRun = false }) {
-  return new Promise((resolve) => {
-    const args = dryRun ? ["--dry-run"] : [];
-    const proc = spawn("node", [scriptPath, ...args], { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (b) => { stdout += b.toString(); });
-    proc.stderr.on("data", (b) => { stderr += b.toString(); });
-    proc.on("close", (code) => {
-      resolve({ ok: code === 0, stdout, stderr, exitCode: code ?? -1 });
-    });
-    proc.on("error", (err) => {
-      resolve({ ok: false, stdout, stderr: `${stderr}\nspawn error: ${err.message}`, exitCode: -1 });
-    });
-  });
-}
-
-/** Locate refresh-models.mjs relative to this plugin file. */
-function getRefreshScriptPath() {
-  // import.meta.url → file:///.../index.js
-  const here = new URL(".", import.meta.url).pathname;
-  return path.join(here, "src", "refresh-models.mjs");
+async function runRefreshInProcess(pluginConfig, { dryRun = false } = {}) {
+  const lines = [];
+  const log = (msg) => { lines.push(String(msg)); };
+  const cursorAgent = sanitizeCommand(pluginConfig?.command);
+  try {
+    await refreshCursorModels({ cursorAgent, dryRun, log });
+    return { ok: true, lines };
+  } catch (err) {
+    lines.push(`refresh failed: ${err?.message ?? err}`);
+    return { ok: false, lines };
+  }
 }
 
 function formatCacheStatus(rules) {
@@ -284,16 +280,9 @@ export default definePluginEntry({
       if (norm === "status") return formatCacheStatus(loadRules());
       if (norm === "list") return formatFamilyList(loadRules());
       if (norm === "refresh") {
-        const scriptPath = getRefreshScriptPath();
-        if (!existsSync(scriptPath)) {
-          return (
-            `Cannot find refresh script at ${scriptPath}.\n` +
-            `Re-install the plugin: openclaw plugins install <path-to-openclaw-cursor-cli>.`
-          );
-        }
-        const result = await runRefreshScript({ scriptPath });
-        const status = result.ok ? "ok" : `failed (exit ${result.exitCode})`;
-        const tail = (result.stdout + result.stderr).trim().split("\n").slice(-8).join("\n");
+        const result = await runRefreshInProcess(pluginConfig);
+        const status = result.ok ? "ok" : "failed";
+        const tail = result.lines.slice(-8).join("\n") || "(no output)";
         const rules = loadRules();
         return (
           `cursor-models refresh: ${status}\n\n${tail}\n\n` +

@@ -11,10 +11,35 @@
  * Also runnable as a script:  node src/refresh-models.mjs
  */
 
-import { spawn } from "node:child_process";
+// Subprocess invocation is delegated to OpenClaw's plugin-sdk run-command
+// helper — the SDK-sanctioned API for plugin code. We deliberately do not
+// reach for node's raw subprocess module.
+//
+// We load the SDK lazily so the module is parsable in two execution contexts:
+//   - inside the plugin runtime, where bare specifier "openclaw/..." resolves
+//     via the runtime's import hook;
+//   - as a standalone CLI script invoked by scripts/refresh-models.sh, where
+//     the wrapper sets OPENCLAW_RUN_COMMAND_URL to an absolute file:// URL.
 import { writeFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+
+let _runPluginCommandWithTimeout = null;
+async function loadRunCommand() {
+  if (_runPluginCommandWithTimeout) return _runPluginCommandWithTimeout;
+  const explicitUrl = process.env.OPENCLAW_RUN_COMMAND_URL;
+  const mod = explicitUrl
+    ? await import(explicitUrl)
+    : await import("openclaw/plugin-sdk/run-command");
+  if (typeof mod?.runPluginCommandWithTimeout !== "function") {
+    throw new Error(
+      "Could not load runPluginCommandWithTimeout from the OpenClaw plugin SDK. " +
+      "Set OPENCLAW_RUN_COMMAND_URL to file:///<openclaw>/dist/plugin-sdk/run-command.js.",
+    );
+  }
+  _runPluginCommandWithTimeout = mod.runPluginCommandWithTimeout;
+  return _runPluginCommandWithTimeout;
+}
 
 export const KNOWN_EFFORT_TOKENS = ["none", "low", "medium", "high", "xhigh", "max", "extra-high"];
 
@@ -23,25 +48,14 @@ export function getRulesCachePath() {
   return path.join(homedir(), ".openclaw", "extensions", "cursor-cli", "model-rules.json");
 }
 
-/** Spawn a command, capture stdout, reject on non-zero exit. */
-function spawnCapture(cmd, args, { timeoutMs = 60000 } = {}) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => {
-      proc.kill("SIGTERM");
-      reject(new Error(`spawn(${cmd}) timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    proc.stdout.on("data", (b) => { stdout += b.toString(); });
-    proc.stderr.on("data", (b) => { stderr += b.toString(); });
-    proc.on("error", (err) => { clearTimeout(timer); reject(err); });
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0) reject(new Error(`${cmd} ${args.join(" ")} exited ${code}\n${stderr}`));
-      else resolve(stdout);
-    });
-  });
+/** Run a command and capture stdout; reject on non-zero exit. */
+async function spawnCapture(cmd, args, { timeoutMs = 60000 } = {}) {
+  const run = await loadRunCommand();
+  const result = await run({ argv: [cmd, ...args], timeoutMs });
+  if (result.code !== 0) {
+    throw new Error(`${cmd} ${args.join(" ")} exited ${result.code}\n${result.stderr}`);
+  }
+  return result.stdout;
 }
 
 /**
@@ -356,15 +370,19 @@ export async function refreshCursorModels({ cursorAgent = "cursor-agent", opencl
   return payload;
 }
 
-// CLI entry
+// CLI entry. Wrapped in an async IIFE so this module stays parsable by
+// loaders that don't permit top-level await (some plugin runtimes wrap ESM
+// modules in a script-style evaluator).
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const args = process.argv.slice(2);
-  const dryRun = args.includes("--dry-run");
-  try {
-    await refreshCursorModels({ dryRun });
-    process.exit(0);
-  } catch (err) {
-    console.error(`refresh-models failed: ${err.message}`);
-    process.exit(1);
-  }
+  (async () => {
+    const args = process.argv.slice(2);
+    const dryRun = args.includes("--dry-run");
+    try {
+      await refreshCursorModels({ dryRun });
+      process.exit(0);
+    } catch (err) {
+      console.error(`refresh-models failed: ${err?.message ?? err}`);
+      process.exit(1);
+    }
+  })();
 }
