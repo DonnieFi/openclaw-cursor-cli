@@ -1,0 +1,56 @@
+{
+  "name": "@jeehou/openclaw-cursor-cli",
+  "version": "0.0.1",
+  "description": "OpenClaw plugin: route model calls through the local `cursor-agent` binary (Cursor subscription). Adds a `cursor-cli` provider and CLI backend with live model-catalog refresh and unified `--thinking` mapping.",
+  "type": "module",
+  "main": "./index.js",
+  "license": "MIT",
+  "author": "jeehou",
+  "homepage": "https://github.com/jeehou/openclaw-cursor-cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeehou/openclaw-cursor-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jeehou/openclaw-cursor-cli/issues"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "cursor",
+    "cursor-agent",
+    "cli-backend",
+    "ai",
+    "llm",
+    "model-provider"
+  ],
+  "files": [
+    "index.js",
+    "openclaw.plugin.json",
+    "src/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.5.0"
+    },
+    "build": {
+      "openclawVersion": "2026.5.7"
+    },
+    "release": {
+      "publishToClawHub": true,
+      "publishToNpm": false
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "openclaw": "2026.5.7"
+  }
+}

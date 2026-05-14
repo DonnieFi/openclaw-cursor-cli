@@ -1,0 +1,52 @@
+{
+  "id": "cursor-cli",
+  "name": "Cursor CLI",
+  "description": "Use the local `cursor-agent` binary (Cursor subscription) as an OpenClaw model backend.",
+  "activation": {
+    "onStartup": false
+  },
+  "enabledByDefault": false,
+  "providers": ["cursor-cli"],
+  "modelSupport": {
+    "modelPrefixes": ["cursor-cli/"]
+  },
+  "cliBackends": ["cursor-cli"],
+  "commandAliases": [
+    {
+      "name": "cursor-models",
+      "kind": "runtime-slash"
+    }
+  ],
+  "providerAuthEnvVars": {
+    "cursor-cli": []
+  },
+  "providerAuthChoices": [
+    {
+      "provider": "cursor-cli",
+      "method": "cli",
+      "choiceId": "cursor-cli",
+      "choiceLabel": "Cursor Agent CLI",
+      "choiceHint": "Reuse a local `cursor-agent login` on this host (Cursor subscription).",
+      "assistantPriority": 0,
+      "groupId": "cursor-cli",
+      "groupLabel": "Cursor",
+      "groupHint": "Cursor subscription via cursor-agent CLI"
+    }
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Path or name of the cursor-agent binary (default: cursor-agent)."
+      },
+      "extraArgs": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "description": "Extra args appended to every cursor-agent invocation (e.g. --force)."
+      }
+    }
+  }
+}
