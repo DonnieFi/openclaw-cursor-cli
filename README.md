@@ -126,7 +126,7 @@ Idempotent — re-running just updates the same files. OpenClaw backs up `opencl
 
 ## Plugin config (optional)
 
-In `~/.openclaw/openclaw.json`:
+All fields are optional. Defaults preserve full agent mode (backward compatible with `0.0.1`). In `~/.openclaw/openclaw.json`:
 
 ```json5
 {
@@ -135,9 +135,32 @@ In `~/.openclaw/openclaw.json`:
       "cursor-cli": {
         enabled: true,
         config: {
-          // Override the cursor-agent binary path (default: "cursor-agent" on PATH)
+          // Path or basename of the cursor-agent binary (default: cursor-agent on PATH).
+          // Only an absolute path or a simple basename like "cursor-agent" is accepted;
+          // shell metacharacters (`;`, `|`, `&`, `` ` ``, `$`, `<`, `>`, …) are rejected.
           command: "/home/joe.hou/.local/bin/cursor-agent",
-          // Extra args appended to every cursor-agent invocation
+
+          // Execution mode. Pick the lowest privilege your workflow needs.
+          //   "agent" (default) — full agent, can plan + edit + run shell tools
+          //   "plan"            — read-only/planning, proposes diffs but never edits
+          //   "ask"             — pure Q&A, no tool use at all
+          mode: "agent",
+
+          // Whether to pass --force --trust to cursor-agent.
+          //   true  (default) — non-interactive headless: cursor-agent auto-approves
+          //                     its own write/shell tools inside the workspace.
+          //   false           — cursor-agent will refuse tool actions without an
+          //                     interactive approval. Recommended for untrusted
+          //                     workspaces; pair with mode:"plan" or "ask" for max safety.
+          allowTools: true,
+
+          // Optional override for cursor-agent's sandbox setting.
+          //   "enabled"  — confine tool actions to a sandbox.
+          //   "disabled" — opt out (cursor-agent's own default behavior).
+          //   omitted    — leave it to cursor-agent's config.
+          // sandbox: "enabled",
+
+          // Advanced: extra args appended verbatim. Most users do not need this.
           extraArgs: []
         }
       }
@@ -145,6 +168,15 @@ In `~/.openclaw/openclaw.json`:
   }
 }
 ```
+
+### Recommended safety profiles
+
+| Profile | Config | Effect |
+| --- | --- | --- |
+| **Full agent** (default) | `{}` or omit | `--force --trust`, may edit/run shell in the workspace |
+| **Plan-only** | `{ mode: "plan" }` | read-only/planning, no edits even with default `allowTools: true` |
+| **Read-only Q&A** | `{ mode: "ask", allowTools: false }` | pure Q&A, refuses any tool action |
+| **Sandbox-enforced** | `{ sandbox: "enabled" }` | full agent but confined to cursor-agent's sandbox |
 
 ## Uninstall / Rollback
 
@@ -175,7 +207,10 @@ plugin.resolveExecutionArgs reads ~/.openclaw/extensions/cursor-cli/model-rules.
    looks up rules.families["claude-opus-4-7"]["high"] → "claude-opus-4-7-thinking-high"
     ↓
 Spawns: cursor-agent -p --output-format stream-json --stream-partial-output \
-        --force --trust [--resume <prev-id>] "<prompt>" --model claude-opus-4-7-thinking-high
+        [--mode plan|ask]    # only if config.mode != "agent"
+        [--force --trust]    # only if config.allowTools != false (default true)
+        [--sandbox enabled|disabled]  # only if config.sandbox is set
+        [--resume <prev-id>] "<prompt>" --model claude-opus-4-7-thinking-high
     ↓
 Parses NDJSON stream via OpenClaw's claude-stream-json dialect:
    {type:"system",subtype:"init",session_id}     → session bind
@@ -207,6 +242,6 @@ openclaw-cursor-cli/
 - **Streaming**: uses `--output-format stream-json --stream-partial-output` and the `claude-stream-json` jsonl dialect (Cursor's NDJSON is event-compatible with Claude Code's). Multi-turn session resume via `--resume <id>` works.
 - **`thinking` events from Cursor are silently dropped** by the `claude-stream-json` parser (Claude's dialect doesn't know that event type). Final `assistant` and `result` lines are parsed correctly — only intermediate reasoning text is invisible.
 - **Token usage counters** are not surfaced into OpenClaw's `agentMeta.usage` under stream-json. Switch `output: "jsonl"` → `"json"` in `index.js` if you need accurate accounting.
-- **`cursor-agent` runs in `--force --trust` headless mode**, which lets it execute its own tools (write, shell) **inside the current workspace**. Mirrors `claude-cli` behavior — only use it in directories you trust.
+- **`cursor-agent` runs in `--force --trust` headless mode by default**, which lets it execute its own tools (write, shell) **inside the current workspace**. Mirrors `claude-cli` behavior. For untrusted workspaces, set `config.mode: "plan"` (or `"ask"`) and/or `config.allowTools: false` — see the *Plugin config* section above for safety profiles.
 - **Per-`-fast` variants** (e.g. `gpt-5.5-high-fast`) are not exposed in the catalog yet. Add a separate `--fast` flag axis if needed.
 - **External plugins can't register top-level `openclaw <cmd>` CLI subcommands** in OpenClaw 2026.5.7 — that's why refreshing from the shell goes through `scripts/refresh-models.sh` rather than e.g. `openclaw cursor-models refresh`. The `/cursor-models` slash command is the in-chat equivalent.

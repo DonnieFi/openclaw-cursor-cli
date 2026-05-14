@@ -59,29 +59,81 @@ function resolveCursorModelId(modelId, thinkingLevel, rules) {
   return modelId;
 }
 
-function buildCliBackend(pluginConfig) {
-  const command =
-    typeof pluginConfig?.command === "string" && pluginConfig.command.trim()
-      ? pluginConfig.command.trim()
-      : CURSOR_CLI_DEFAULT_COMMAND;
+const VALID_MODES = new Set(["agent", "plan", "ask"]);
+const VALID_SANDBOX = new Set(["enabled", "disabled"]);
 
-  const extraArgs = Array.isArray(pluginConfig?.extraArgs)
-    ? pluginConfig.extraArgs.filter((a) => typeof a === "string")
-    : [];
+/**
+ * Sanitize the `command` config value. Prevents shell-metachar injection if the
+ * value somehow comes from an untrusted source — only allow an absolute path or
+ * a plain command basename like `cursor-agent` / `cursor-agent-canary`.
+ */
+function sanitizeCommand(raw) {
+  if (typeof raw !== "string") return CURSOR_CLI_DEFAULT_COMMAND;
+  const trimmed = raw.trim();
+  if (!trimmed) return CURSOR_CLI_DEFAULT_COMMAND;
+  // Reject shell metacharacters / control chars that could be exploited if the
+  // value somehow flows through a shell. spawn() itself does not invoke a shell
+  // here, but defense-in-depth: keep `command` to "path-like" inputs only.
+  // Note: backslash is allowed so Windows paths (C:\foo\bar.exe) work.
+  if (/[;&|`$<>\n\r\t"']/.test(trimmed)) return CURSOR_CLI_DEFAULT_COMMAND;
+  // Allow: absolute POSIX path, Windows drive path, or a simple basename
+  // (letters/digits/underscore/dot/hyphen).
+  if (trimmed.startsWith("/") || /^[A-Za-z]:[\\/]/.test(trimmed)) return trimmed;
+  if (/^[A-Za-z0-9_.-]+$/.test(trimmed)) return trimmed;
+  return CURSOR_CLI_DEFAULT_COMMAND;
+}
+
+/**
+ * Build the `args` array passed to cursor-agent on every invocation.
+ *
+ * Security knobs (all configurable via plugin config — see README):
+ *   - `mode: "agent"|"plan"|"ask"`  (default "agent")
+ *       "plan" / "ask" route through cursor-agent's read-only execution modes.
+ *   - `allowTools: boolean`         (default true)
+ *       When false, omit `--force --trust` so cursor-agent will refuse to run
+ *       its built-in write/shell tools without explicit approval.
+ *   - `sandbox: "enabled"|"disabled"`  (optional, no flag if unset)
+ *       Forwarded as `--sandbox <value>`.
+ *
+ * Defaults preserve backward compatibility (full agent mode with --force --trust);
+ * users can opt in to safer profiles without code changes.
+ */
+function buildCursorArgs(pluginConfig) {
+  const args = ["-p", "--output-format", "stream-json", "--stream-partial-output"];
+
+  const mode = typeof pluginConfig?.mode === "string" ? pluginConfig.mode.toLowerCase() : "agent";
+  if (VALID_MODES.has(mode) && mode !== "agent") {
+    args.push("--mode", mode);
+  }
+
+  const allowTools = pluginConfig?.allowTools !== false; // default true
+  if (allowTools) {
+    args.push("--force", "--trust");
+  }
+
+  const sandbox = typeof pluginConfig?.sandbox === "string" ? pluginConfig.sandbox.toLowerCase() : null;
+  if (sandbox && VALID_SANDBOX.has(sandbox)) {
+    args.push("--sandbox", sandbox);
+  }
+
+  if (Array.isArray(pluginConfig?.extraArgs)) {
+    for (const a of pluginConfig.extraArgs) {
+      if (typeof a === "string" && a.length > 0) args.push(a);
+    }
+  }
+
+  return args;
+}
+
+function buildCliBackend(pluginConfig) {
+  const command = sanitizeCommand(pluginConfig?.command);
+  const args = buildCursorArgs(pluginConfig);
 
   return {
     id: BACKEND_ID,
     config: {
       command,
-      args: [
-        "-p",
-        "--output-format",
-        "stream-json",
-        "--stream-partial-output",
-        "--force",
-        "--trust",
-        ...extraArgs,
-      ],
+      args,
       output: "jsonl",
       resumeOutput: "jsonl",
       jsonlDialect: "claude-stream-json",

@@ -39,13 +39,29 @@
     "properties": {
       "command": {
         "type": "string",
-        "description": "Path or name of the cursor-agent binary (default: cursor-agent)."
+        "description": "Path or name of the cursor-agent binary. Must be an absolute path or a simple binary name (default: cursor-agent). Shell metachars are rejected."
+      },
+      "mode": {
+        "type": "string",
+        "enum": ["agent", "plan", "ask"],
+        "default": "agent",
+        "description": "Execution mode passed to cursor-agent. 'agent' = full agent (default); 'plan' = read-only/planning, no file edits; 'ask' = pure Q&A, read-only."
+      },
+      "allowTools": {
+        "type": "boolean",
+        "default": true,
+        "description": "If true (default), pass --force --trust so cursor-agent may run its built-in write/shell tools without prompting. Set to false to make tool actions require explicit approval — this disables non-interactive headless runs but is much safer for untrusted workspaces."
+      },
+      "sandbox": {
+        "type": "string",
+        "enum": ["enabled", "disabled"],
+        "description": "Override cursor-agent's sandbox setting. 'enabled' restricts tool actions to a sandbox; 'disabled' opts out. Leave unset to use cursor-agent's own config default."
       },
       "extraArgs": {
         "type": "array",
         "items": { "type": "string" },
         "default": [],
-        "description": "Extra args appended to every cursor-agent invocation (e.g. --force)."
+        "description": "Extra args appended to every cursor-agent invocation (advanced — most users do not need this)."
       }
     }
   }
