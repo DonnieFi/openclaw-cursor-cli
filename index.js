@@ -140,6 +140,10 @@ function buildCliBackend(pluginConfig) {
     config: {
       command,
       args,
+      // OpenClaw replaces `args` with `resumeArgs` on turn 2+. Must keep -p /
+      // stream-json / trust flags or cursor-agent exits without a result event
+      // (same pattern as Anthropic's claude-cli resumeArgs).
+      resumeArgs: [...args, "--resume", "{sessionId}"],
       output: "jsonl",
       resumeOutput: "jsonl",
       jsonlDialect: "claude-stream-json",
@@ -151,7 +155,6 @@ function buildCliBackend(pluginConfig) {
       // Instead, the hook below appends `--model <realId>` itself.
       sessionMode: "existing",
       sessionIdFields: ["session_id"],
-      resumeArgs: ["--resume", "{sessionId}"],
       systemPromptMode: "append",
       systemPromptWhen: "first",
     },
