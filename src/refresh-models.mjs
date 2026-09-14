@@ -316,6 +316,11 @@ export function buildPluginPayload(models) {
       // startup load when activation.onStartup is false — this fork sets
       // onStartup/onProviders so the plugin still loads. See openclaw#148584.
       api: "openai-completions",
+      // Non-secret marker declared in openclaw.plugin.json nonSecretAuthMarkers.
+      // Without this, Control UI marks every cursor-cli model unavailable
+      // ("0 of N models available") even when cursor-agent is logged in —
+      // prepareSyntheticAuth alone is not enough for the prepared catalog path.
+      apiKey: "openclaw:cursor-cli-native-auth",
       models: catalogModels,
     },
     rules: {
