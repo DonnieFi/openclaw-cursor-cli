@@ -1,18 +1,18 @@
 {
-  "name": "@jeehou/openclaw-cursor-cli",
-  "version": "0.0.6",
-  "description": "OpenClaw plugin: route model calls through the local `cursor-agent` binary (Cursor subscription). Adds a `cursor-cli` provider and CLI backend with live model-catalog refresh and unified `--thinking` mapping.",
+  "name": "@donniefi/openclaw-cursor-cli",
+  "version": "0.0.7",
+  "description": "OpenClaw plugin: route model calls through the local `cursor-agent` binary (Cursor subscription). Maintained fork of @jeehou/openclaw-cursor-cli with Gateway startup/activation fixes.",
   "type": "module",
   "main": "./index.js",
   "license": "MIT",
-  "author": "jeehou",
-  "homepage": "https://github.com/jeehou/openclaw-cursor-cli#readme",
+  "author": "DonnieFi",
+  "homepage": "https://github.com/DonnieFi/openclaw-cursor-cli#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jeehou/openclaw-cursor-cli.git"
+    "url": "git+https://github.com/DonnieFi/openclaw-cursor-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/jeehou/openclaw-cursor-cli/issues"
+    "url": "https://github.com/DonnieFi/openclaw-cursor-cli/issues"
   },
   "keywords": [
     "openclaw",

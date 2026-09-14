@@ -3,7 +3,8 @@
   "name": "Cursor CLI",
   "description": "Use the local `cursor-agent` binary (Cursor subscription) as an OpenClaw model backend.",
   "activation": {
-    "onStartup": false
+    "onStartup": true,
+    "onProviders": ["cursor-cli"]
   },
   "enabledByDefault": false,
   "providers": ["cursor-cli"],

@@ -1,5 +1,11 @@
 # openclaw-cursor-cli
 
+Maintained fork of [`jeehou/openclaw-cursor-cli`](https://github.com/jeehou/openclaw-cursor-cli) (`@donniefi/openclaw-cursor-cli`).
+
+**Fork fixes (0.0.7):**
+- `activation.onStartup: true` + `onProviders: ["cursor-cli"]` so the Gateway loads the plugin when it is the selected model
+- `refresh-models` no longer writes `api: "openai-completions"` (that core API value made OpenClaw skip plugin startup → `Unknown CLI backend: cursor-cli`; see [openclaw#148584](https://github.com/openclaw/openclaw/issues/148584))
+
 An OpenClaw plugin that adds a `cursor-cli` CLI backend and provider, so OpenClaw can route model calls through the local `cursor-agent` binary (using your Cursor subscription).
 
 **Pattern**: structurally identical to OpenClaw's built-in `claude-cli` backend — a thin wrapper that spawns the Cursor IDE's official CLI in headless `-p --output-format stream-json` mode and pipes the result back into OpenClaw.
@@ -34,18 +40,22 @@ This plugin acts as a thin CLI bridge to cursor-agent and inherits all of cursor
 
 ## Install
 
-### Via ClawHub (recommended)
+### From this fork (recommended)
+
+```bash
+git clone https://github.com/DonnieFi/openclaw-cursor-cli.git
+openclaw plugins install --link ./openclaw-cursor-cli
+# or copy-install:
+# openclaw plugins install ./openclaw-cursor-cli --force
+```
+
+### Upstream ClawHub (unmaintained as of 0.0.6)
 
 ```bash
 openclaw plugins install clawhub:@jeehou/openclaw-cursor-cli
 ```
 
-### From a local checkout (development)
-
-```bash
-git clone https://github.com/jeehou/openclaw-cursor-cli.git
-openclaw plugins install ./openclaw-cursor-cli
-```
+Still works for install, but does not include the 0.0.7 Gateway activation fixes.
 
 ### Post-install (both routes)
 
