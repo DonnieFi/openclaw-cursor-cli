@@ -2,12 +2,30 @@
 
 Maintained fork of [`jeehou/openclaw-cursor-cli`](https://github.com/jeehou/openclaw-cursor-cli) (`@donniefi/openclaw-cursor-cli`).
 
-**Fork fixes (0.0.10):**
-- `activation.onStartup: true` + `onProviders: ["cursor-cli"]` so the Gateway always loads the plugin when installed/enabled (avoids `Unknown CLI backend: cursor-cli` when the catalog uses `api: "openai-completions"`; see [openclaw#148584](https://github.com/openclaw/openclaw/issues/148584))
-- `syntheticAuthRefs` + `prepareSyntheticAuth` probe of `cursor-agent status --format json`
-- Catalog writes non-secret `apiKey: "openclaw:cursor-cli-native-auth"` so Control UI shows models as available (fixes “0 of N models available” / Credentials Not configured)
-- `resumeArgs` keeps `-p --output-format stream-json …` plus `--resume` (fixes turn-2 `CLI stream-json output ended without a result event`)
-- Docs/install paths point at this fork; ClawHub `@jeehou/…` remains the unmaintained upstream snapshot
+Upstream ClawHub package `@jeehou/openclaw-cursor-cli` last shipped **0.0.6** (May 2026) and is effectively unmaintained. Use this fork if you want Cursor CLI models to work reliably with current OpenClaw Gateways and Control UI.
+
+## Why this fork exists
+
+Three separate failure modes showed up on OpenClaw **2026.9.4** with the upstream 0.0.6 plugin. Only the first is partly an OpenClaw host bug; the other two are plugin packaging bugs (also present upstream).
+
+| Symptom | Cause | Fix in this fork |
+| --- | --- | --- |
+| `Unknown CLI backend: cursor-cli` after setting default model | Catalog wrote `api: "openai-completions"`. OpenClaw treats that as a core built-in API and **skips loading** the owning plugin at Gateway startup when `activation.onStartup` is false. Dispatch still classifies the id as a CLI provider → crash. Host tracking: [openclaw#148584](https://github.com/openclaw/openclaw/issues/148584). Upstream plugin: [jeehou#3](https://github.com/jeehou/openclaw-cursor-cli/issues/3). | `activation.onStartup: true` + `onProviders: ["cursor-cli"]` |
+| Control UI: “0 of N models available” / “Credentials for \<agent\> — Not configured”; picking a model bounces to settings | Prepared model catalog needs a **non-secret** `models.providers.cursor-cli.apiKey` marker for availability. `prepareSyntheticAuth` alone is not enough for the Control UI path. | Catalog writes `apiKey: "openclaw:cursor-cli-native-auth"`; manifest declares `syntheticAuthRefs` / `nonSecretAuthMarkers`; `prepareSyntheticAuth` probes `cursor-agent status --format json` |
+| Turn 1 works, turn 2+ fails with `CLI stream-json output ended without a result event` | OpenClaw **replaces** `config.args` with `config.resumeArgs` on resume. Upstream `resumeArgs` was only `["--resume", "{sessionId}"]`, so `-p` / `stream-json` / trust flags were dropped and cursor-agent never emitted a `result` event. Anthropic’s built-in `claude-cli` avoids this by keeping the full print args in `resumeArgs`. | `resumeArgs: [...args, "--resume", "{sessionId}"]` |
+
+**What to file where**
+
+- Keep [openclaw#148584](https://github.com/openclaw/openclaw/issues/148584) focused on host startup ownership (plugin-owned CLI backends + core built-in `api`). Do not pile the Control UI / resume bugs onto that issue — those are plugin config.
+- Upstream plugin footguns belong on [jeehou/openclaw-cursor-cli](https://github.com/jeehou/openclaw-cursor-cli) (or just use this fork).
+- This repo is the place that actually ships the combined fix today.
+
+**Fork changelog (latest first)**
+
+- **0.0.10** — `resumeArgs` keeps print/stream-json flags (multi-turn fix)
+- **0.0.9** — non-secret catalog `apiKey` marker (Control UI availability)
+- **0.0.8** — `prepareSyntheticAuth` + `syntheticAuthRefs`
+- **0.0.7** — `onStartup` / `onProviders` Gateway activation
 
 An OpenClaw plugin that adds a `cursor-cli` CLI backend and provider, so OpenClaw can route model calls through the local `cursor-agent` binary (using your Cursor subscription).
 
@@ -58,7 +76,7 @@ openclaw plugins install --link ./openclaw-cursor-cli
 openclaw plugins install clawhub:@jeehou/openclaw-cursor-cli
 ```
 
-Still works for install, but does not include the 0.0.7 Gateway activation fixes.
+Still works for install, but does not include the 0.0.7–0.0.10 fixes above (startup, Control UI auth marker, multi-turn `resumeArgs`).
 
 ### Post-install (both routes)
 
