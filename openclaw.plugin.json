@@ -12,6 +12,8 @@
     "modelPrefixes": ["cursor-cli/"]
   },
   "cliBackends": ["cursor-cli"],
+  "syntheticAuthRefs": ["cursor-cli"],
+  "nonSecretAuthMarkers": ["openclaw:cursor-cli-native-auth"],
   "configContracts": {
     "compatibilityMigrationPaths": ["models.providers.cursor-cli"]
   },

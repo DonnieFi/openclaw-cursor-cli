@@ -10,6 +10,7 @@ import { refreshCursorModels } from "./src/refresh-models.mjs";
 const BACKEND_ID = "cursor-cli";
 const PROVIDER_ID = "cursor-cli";
 const CURSOR_CLI_DEFAULT_COMMAND = "cursor-agent";
+const CURSOR_CLI_NATIVE_AUTH_MARKER = "openclaw:cursor-cli-native-auth";
 
 const RULES_CACHE_PATH = path.join(homedir(), ".openclaw", "extensions", "cursor-cli", "model-rules.json");
 
@@ -167,6 +168,53 @@ function buildCliBackend(pluginConfig) {
 }
 
 /**
+ * Probe local `cursor-agent status --format json` without reading token material.
+ * Mirrors Anthropic's Claude CLI synthetic-auth seam so Control UI catalog
+ * readiness treats a logged-in Cursor subscription as available instead of
+ * routing model picks into model-setup / settings.
+ */
+async function probeCursorCliAuthStatus({ command, signal } = {}) {
+  try {
+    const { runPluginCommandWithTimeout } = await import("openclaw/plugin-sdk/run-command");
+    const result = await runPluginCommandWithTimeout({
+      argv: [command ?? CURSOR_CLI_DEFAULT_COMMAND, "status", "--format", "json"],
+      timeoutMs: 5_000,
+      signal,
+    });
+    signal?.throwIfAborted?.();
+    if (result.code !== 0) return { status: "missing" };
+    const parsed = JSON.parse(String(result.stdout ?? ""));
+    if (!parsed || typeof parsed !== "object") return { status: "unreadable" };
+    if (parsed.isAuthenticated === true || parsed.status === "authenticated") {
+      return {
+        status: "available",
+        email: typeof parsed.userInfo?.email === "string" ? parsed.userInfo.email : undefined,
+      };
+    }
+    return { status: "missing" };
+  } catch {
+    return { status: "unreadable" };
+  }
+}
+
+async function prepareCursorCliSyntheticAuth({ command, provider, signal } = {}) {
+  signal?.throwIfAborted?.();
+  if ((provider ?? "").toLowerCase() !== PROVIDER_ID) return undefined;
+  const result = await probeCursorCliAuthStatus({
+    command: sanitizeCommand(command),
+    signal,
+  });
+  signal?.throwIfAborted?.();
+  return result.status === "available"
+    ? {
+        apiKey: CURSOR_CLI_NATIVE_AUTH_MARKER,
+        source: "Cursor CLI native auth",
+        mode: "oauth",
+      }
+    : undefined;
+}
+
+/**
  * Drive the refresh flow in-process: calls `refreshCursorModels(...)` from
  * src/refresh-models.mjs (which delegates subprocess work to OpenClaw's
  * plugin-sdk run-command helper). Captures log lines into a buffer so the
@@ -312,6 +360,11 @@ export default definePluginEntry({
           order: "simple",
           run: async () => null,
         },
+        prepareSyntheticAuth: (ctx) =>
+          prepareCursorCliSyntheticAuth({
+            ...ctx,
+            command: sanitizeCommand(pluginConfig?.command),
+          }),
         resolveDynamicModel: (ctx) => ({
           id: ctx.modelId,
           name: ctx.modelId,
