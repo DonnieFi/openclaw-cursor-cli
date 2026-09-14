@@ -2,10 +2,11 @@
 
 Maintained fork of [`jeehou/openclaw-cursor-cli`](https://github.com/jeehou/openclaw-cursor-cli) (`@donniefi/openclaw-cursor-cli`).
 
-**Fork fixes (0.0.9):**
+**Fork fixes (0.0.10):**
 - `activation.onStartup: true` + `onProviders: ["cursor-cli"]` so the Gateway always loads the plugin when installed/enabled (avoids `Unknown CLI backend: cursor-cli` when the catalog uses `api: "openai-completions"`; see [openclaw#148584](https://github.com/openclaw/openclaw/issues/148584))
 - `syntheticAuthRefs` + `prepareSyntheticAuth` probe of `cursor-agent status --format json`
 - Catalog writes non-secret `apiKey: "openclaw:cursor-cli-native-auth"` so Control UI shows models as available (fixes “0 of N models available” / Credentials Not configured)
+- `resumeArgs` keeps `-p --output-format stream-json …` plus `--resume` (fixes turn-2 `CLI stream-json output ended without a result event`)
 - Docs/install paths point at this fork; ClawHub `@jeehou/…` remains the unmaintained upstream snapshot
 
 An OpenClaw plugin that adds a `cursor-cli` CLI backend and provider, so OpenClaw can route model calls through the local `cursor-agent` binary (using your Cursor subscription).
