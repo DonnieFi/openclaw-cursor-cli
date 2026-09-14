@@ -311,11 +311,11 @@ export function buildPluginPayload(models) {
   return {
     providerConfig: {
       baseUrl: "cli://cursor-agent",
-      // Omit api. OpenClaw treats openai-completions as a core built-in API and
-      // then skips loading this plugin at Gateway startup (Unknown CLI backend)
-      // when activation.onStartup is false. With no api, startup ownership falls
-      // through to this plugin's manifest providers[] / cliBackends[].
-      // See: https://github.com/openclaw/openclaw/issues/148584
+      // Required by OpenClaw's model catalog loader (provider/model must set api).
+      // openai-completions is a CORE_BUILT_IN_MODEL_API and used to skip Gateway
+      // startup load when activation.onStartup is false — this fork sets
+      // onStartup/onProviders so the plugin still loads. See openclaw#148584.
+      api: "openai-completions",
       models: catalogModels,
     },
     rules: {

@@ -3,8 +3,8 @@
 Maintained fork of [`jeehou/openclaw-cursor-cli`](https://github.com/jeehou/openclaw-cursor-cli) (`@donniefi/openclaw-cursor-cli`).
 
 **Fork fixes (0.0.7):**
-- `activation.onStartup: true` + `onProviders: ["cursor-cli"]` so the Gateway loads the plugin when it is the selected model
-- `refresh-models` no longer writes `api: "openai-completions"` (that core API value made OpenClaw skip plugin startup → `Unknown CLI backend: cursor-cli`; see [openclaw#148584](https://github.com/openclaw/openclaw/issues/148584))
+- `activation.onStartup: true` + `onProviders: ["cursor-cli"]` so the Gateway always loads the plugin when installed/enabled (avoids `Unknown CLI backend: cursor-cli` when the catalog uses `api: "openai-completions"`; see [openclaw#148584](https://github.com/openclaw/openclaw/issues/148584))
+- Docs/install paths point at this fork; ClawHub `@jeehou/…` remains the unmaintained upstream snapshot
 
 An OpenClaw plugin that adds a `cursor-cli` CLI backend and provider, so OpenClaw can route model calls through the local `cursor-agent` binary (using your Cursor subscription).
 
@@ -211,7 +211,7 @@ Pick the lowest privilege your workflow actually needs.
 
 If you previously installed `0.0.1` – `0.0.4`, the upgrade is safe and mostly hands-off. Default plugin behavior is unchanged (omitting `mode`/`allowTools`/`sandbox` keeps the original `0.0.1` semantics) and nothing outside `cursor-cli/*` in your config is touched.
 
-Run **two** commands after `openclaw plugins install clawhub:@jeehou/openclaw-cursor-cli --force`:
+Run **two** commands after `openclaw plugins install --link ./openclaw-cursor-cli` (or a `--force` reinstall):
 
 ```bash
 openclaw doctor --fix                                                # 1) replay config migrations
